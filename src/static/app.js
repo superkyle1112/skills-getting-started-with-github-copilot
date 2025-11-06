@@ -12,6 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      // Reset activity select so options don't duplicate on refresh
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -20,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
         const participantsList = details.participants
-          .map(email => `<li>${email}</li>`)
+          .map(email => `<li data-email="${email}">${email} <button class="delete-btn" data-activity="${name}" data-email="${email}" title="Remove participant">✖</button></li>`)
           .join('');
 
         activityCard.innerHTML = `
@@ -34,7 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         `;
 
-        activitiesList.appendChild(activityCard);
+  activitiesList.appendChild(activityCard);
 
         // Add option to select dropdown
         const option = document.createElement("option");
@@ -42,6 +44,8 @@ document.addEventListener("DOMContentLoaded", () => {
         option.textContent = name;
         activitySelect.appendChild(option);
       });
+
+      // Note: delegated delete handler is attached once outside this function
     } catch (error) {
       activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
       console.error("Error fetching activities:", error);
@@ -69,6 +73,9 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities list so the new participant appears immediately
+        activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
@@ -90,4 +97,46 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialize app
   fetchActivities();
+
+  // Attach delegated click handler for delete buttons once
+  activitiesList.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".delete-btn");
+    if (!btn) return;
+
+    const activityName = btn.getAttribute("data-activity");
+    const email = btn.getAttribute("data-email");
+
+    if (!activityName || !email) return;
+
+    if (!confirm(`Remove ${email} from "${activityName}"?`)) return;
+
+    try {
+      const resp = await fetch(`/activities/${encodeURIComponent(activityName)}/unregister?email=${encodeURIComponent(email)}`, {
+        method: "POST",
+      });
+
+      const result = await resp.json();
+
+      if (resp.ok) {
+        // Refresh activities list to update availability and participant lists
+        activitiesList.innerHTML = "";
+        activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
+        fetchActivities();
+
+        messageDiv.textContent = result.message || "Participant removed";
+        messageDiv.className = "success";
+        messageDiv.classList.remove("hidden");
+        setTimeout(() => messageDiv.classList.add("hidden"), 4000);
+      } else {
+        messageDiv.textContent = result.detail || "Failed to remove participant";
+        messageDiv.className = "error";
+        messageDiv.classList.remove("hidden");
+      }
+    } catch (error) {
+      console.error("Error removing participant:", error);
+      messageDiv.textContent = "Failed to remove participant. Please try again.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+    }
+  });
 });
